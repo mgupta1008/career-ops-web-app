@@ -1,0 +1,39 @@
+{
+  "name": "full-app",
+  "version": "1.0.0",
+  "description": "",
+  "type": "module",
+  "packageManager": "pnpm@10.28.2",
+  "engines": {
+    "node": ">=24.13.0",
+    "pnpm": ">=10.28.2"
+  },
+  "scripts": {
+    "dev:up": "docker-compose -f infra/docker-compose.yaml up -d --build --remove-orphans",
+    "dev:down": "docker-compose -f infra/docker-compose.yaml down",
+    "dev:nuke": "docker-compose -f infra/docker-compose.yaml down -v --remove-orphans",
+    "dev:rebuild": "docker-compose -f infra/docker-compose.yaml build --no-cache && docker-compose -f infra/docker-compose.yaml up -d --remove-orphans",
+    "dev:restart": "docker-compose -f infra/docker-compose.yaml restart"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@faker-js/faker": "^10.3.0",
+    "@vitest/ui": "^4.0.18",
+    "eslint": "^9.39.1",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
+    "prettier": "^3.4.2",
+    "vitest": "^4.0.18"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,css}": [
+      "prettier --write"
+    ]
+  }
+}

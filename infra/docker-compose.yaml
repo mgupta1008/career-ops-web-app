@@ -1,0 +1,206 @@
+name: full-app
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    hostname: postgres
+    container_name: full-app-postgres
+    restart: unless-stopped
+    env_file:
+      - path: ../.env
+        required: false
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-career_ops}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d career_ops"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  redis:
+    image: redis:7-alpine
+    hostname: redis
+    container_name: full-app-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  backend:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    hostname: backend
+    container_name: full-app-backend
+    restart: unless-stopped
+    working_dir: /app/backend
+    env_file:
+      - path: ../backend/.env
+        required: false
+      - path: ../.env
+        required: false
+    environment:
+      NODE_ENV: development
+      PORT: ${BACKEND_PORT:-5001}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/career_ops}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      PDF_OUTPUT_DIR: /app/output
+    volumes:
+      - ../backend:/app/backend
+      - ../worker:/app/worker
+      - ../web:/app/web
+      - ../shared:/app/shared
+      - backend_node_modules:/app/node_modules
+      - pdf_output:/app/output
+    ports:
+      - "5001:5001"
+      - "9229:9229"
+    networks:
+      - app_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:5001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  worker:
+    build:
+      context: ..
+      dockerfile: worker/Dockerfile
+    hostname: worker
+    container_name: full-app-worker
+    restart: unless-stopped
+    working_dir: /app
+    env_file:
+      - path: ../worker/.env
+        required: false
+      - path: ../.env
+        required: false
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/career_ops}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-anthropic/claude-sonnet-4-5}
+      PDF_OUTPUT_DIR: /app/output
+    volumes:
+      - ../backend:/app/backend
+      - ../worker:/app/worker
+      - ../web:/app/web
+      - ../shared:/app/shared
+      - worker_node_modules:/app/node_modules
+      - pdf_output:/app/output
+    networks:
+      - app_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_started
+
+  web:
+    build:
+      context: ..
+      dockerfile: web/Dockerfile
+    hostname: web
+    container_name: full-app-web
+    restart: unless-stopped
+    working_dir: /app
+    env_file:
+      - path: ../web/.env
+        required: false
+      - path: ../.env
+        required: false
+    environment:
+      NODE_ENV: development
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5001}
+    volumes:
+      - ../backend:/app/backend
+      - ../worker:/app/worker
+      - ../web:/app/web
+      - ../shared:/app/shared
+      - web_node_modules:/app/node_modules
+    ports:
+      - "3000:3000"
+      - "9231:9229"
+    networks:
+      - app_network
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  redisinsight:
+    image: redis/redisinsight:latest
+    hostname: redisinsight
+    container_name: full-app-redisinsight
+    restart: unless-stopped
+    ports:
+      - "5540:5540"
+    networks:
+      - app_network
+    profiles:
+      - tools
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  backend_node_modules:
+    driver: local
+  worker_node_modules:
+    driver: local
+  web_node_modules:
+    driver: local
+  pdf_output:
+    driver: local
+
+networks:
+  app_network:
+    driver: bridge
